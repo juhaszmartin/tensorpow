@@ -1,7 +1,8 @@
 """Core routines for the ``tensorpow`` package.
 
 SU(3) Pieri decomposition, Young diagram helpers, SL(2)/SU(3) block
-decompositions, and ``TensorPowerCalculator`` (weighted Schatten-p norms).
+decompositions, and ``TensorPowerCalculator`` (``block_decomposition`` and
+weighted Schatten-p norms).
 """
 
 from __future__ import annotations
@@ -142,11 +143,6 @@ def load_rep(lbl: Tuple[Any, Any]):
         return rep_cache[lbl]
 
     if rtype == "sym":
-        if deg > 26:
-            raise ValueError(
-                f"Symmetric representation degree {deg} exceeds shipped data (max {max_sym}). "
-                "Re-export tensorpow with higher --max-sym or use a smaller tensor power."
-            )
         fname = f"piM_sym_{deg}"
     else:
         raise ValueError(f"Unknown rep label {lbl}")
@@ -212,14 +208,20 @@ def m2_tens_p_bfm(n: int, M: np.ndarray) -> List[Tuple[int, np.ndarray]]:
 class TensorPowerCalculator:
     """Utility class for computing quantities of tensor powers of matrices.
 
-    The primary method is ``schatten_p_norm_weighted``, which computes
-    the weighted Schatten-p norm of an n-th tensor power using cached
-    block decompositions.
+    Public methods:
+
+    - ``block_decomposition`` — irrep blocks of a single matrix's n-th tensor
+      power; shared building block for norms and other functionals.
+    - ``schatten_p_norm_weighted`` — weighted Schatten-p norm of a linear
+      combination of tensor powers, aggregating block singular values.
+
+    For 3×3 matrices, ``block_decomposition`` may return negative
+    multiplicities (virtual decomposition); see that method's docstring.
 
     The constructor does **not** take any arguments.  All parameters like
-    the tensor power ``n`` and Schatten exponent ``p`` are provided to the
-    computation method.  Passing anything to ``__init__`` is therefore a
-    user error and will raise a helpful ``TypeError``.
+    the tensor power ``n`` are provided to the computation methods.  Passing
+    anything to ``__init__`` is therefore a user error and will raise a
+    helpful ``TypeError``.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -234,7 +236,10 @@ class TensorPowerCalculator:
             diagnose.
         """
         if args or kwargs:
-            raise TypeError("TensorPowerCalculator() takes no arguments; pass matrices to schatten_p_norm_weighted() instead")
+            raise TypeError(
+                "TensorPowerCalculator() takes no arguments; "
+                "pass matrices to schatten_p_norm_weighted() or block_decomposition()"
+            )
         self._pieri_cache: dict[int, dict] = {}
 
     def _get_pieri_result(self, n: int, debug: bool = False) -> dict:
@@ -478,3 +483,101 @@ class TensorPowerCalculator:
         if p == np.inf:
             return max_block_norm
         return np.power(total_p_power, 1.0 / p)
+
+    def block_decomposition(
+        self,
+        matrix: Union[np.ndarray, List[List[float]]],
+        n: int = 1,
+        debug: bool = False,
+    ) -> List[Tuple[float, np.ndarray]]:
+        """Compute the block-diagonal decomposition of the n-th tensor power.
+
+        Returns a list of tuples containing the multiplicity and the
+        corresponding block matrix for the given tensor power.  For 3×3
+        matrices, multiplicities may be negative (virtual decomposition).
+
+        Parameters
+        ----------
+        matrix : ndarray or list of lists
+            A single square matrix (either 2x2 or 3x3).
+        n : int
+            Tensor power exponent (positive integer).
+        debug : bool
+            If True, print solver output.
+
+        Returns
+        -------
+        list of tuples
+            A list where each element is `(multiplicity, block_matrix)`.
+        """
+        if n < 1 or not isinstance(n, int):
+            raise ValueError("tensor power n must be a positive integer")
+
+        M = np.array(matrix, dtype=complex)
+        if M.ndim != 2 or M.shape[0] != M.shape[1]:
+            raise ValueError(f"matrix is not square: {M.shape}")
+
+        dim = M.shape[0]
+        if dim not in (2, 3):
+            raise ValueError(f"Matrix dimension {dim} not supported. Only 2x2 and 3x3 matrices are supported.")
+
+        # Trivial power returns the matrix itself with multiplicity 1
+        if n == 1:
+            return [(1.0, M)]
+
+        # Dispatch to the correct helper
+        if dim == 2:
+            return self._block_decomposition_2x2(M, n, debug)
+        else:  # dim == 3
+            return self._block_decomposition_3x3(M, n, debug)
+
+    def _block_decomposition_2x2(self, M: np.ndarray, n: int, debug: bool) -> List[Tuple[float, np.ndarray]]:
+        """Helper to get the block decomposition of a 2x2 matrix."""
+        # Utilize the existing SL(2) blockform function
+        bfm = m2_tens_p_bfm(n, M)
+
+        # Cast integer multiplicities to float for uniform return types
+        result = [(float(mult), block) for mult, block in bfm]
+
+        if debug:
+            print(f"{'Dim':<6} {'Mult':<6}")
+            print("-" * 15)
+            for mult, block in result:
+                print(f"{block.shape[0]:<6} {mult:<6.0f}")
+
+        return result
+
+    def _block_decomposition_3x3(self, M: np.ndarray, n: int, debug: bool) -> List[Tuple[float, np.ndarray]]:
+        """Helper to get the block decomposition of a 3x3 matrix using SU(3) Pieri rules."""
+        pieri_result = self._get_pieri_result(n, debug=debug)
+        self._preload_reps(pieri_result)
+
+        det_M = np.linalg.det(M)
+        blockform = []
+
+        if debug:
+            print(f"{'A_lbl':<10} {'B_lbl':<10} {'Mult':<6} {'m':<4} {'Dim':<6}")
+            print("-" * 45)
+
+        for entry in pieri_result["solution"]:
+            a_raw, b_raw = entry["candidate"]
+            k = float(entry["selected"])  # Multiplicity
+            m = float(entry["m_removed"])  # Determinant power
+
+            a_lbl = label_to_rep(a_raw)
+            b_lbl = label_to_rep(b_raw)
+
+            # Evaluate representation matrices
+            pi_a = eval_rep_matrix(a_lbl, M)
+            pi_b = eval_rep_matrix(b_lbl, M)
+
+            # Reconstruct the block: det(M)^m * (pi_a ⊗ pi_b)
+            scalar = det_M**m
+            block = scalar * np.kron(pi_a, pi_b)
+
+            blockform.append((k, block))
+
+            if debug:
+                print(f"{str(a_raw):<10} {str(b_raw):<10} {k:<6.0f} {m:<4.0f} {block.shape[0]:<6}")
+
+        return blockform

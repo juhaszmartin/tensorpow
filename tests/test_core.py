@@ -57,7 +57,7 @@ def test_schatten_random_nk():
 
 def test_invalid_dimension_and_size():
     # Powers n must be a positive integer.
-    # Base matrices can be 2×2 or 3×3 (now fully supported).
+    # Base matrices can be 2x2 or 3x3 (now fully supported).
     calc = TensorPowerCalculator()
 
     # invalid powers raise
@@ -84,7 +84,7 @@ def test_invalid_dimension_and_size():
 
 
 def test_schatten_n1_2x2():
-    """Test n=1 for 2×2 matrices (direct sum case)."""
+    """Test n=1 for 2x2 matrices (direct sum case)."""
     A = np.array([[1.0, 2.0], [2.0, 1.0]])
     B = np.array([[0.0, 1.0], [1.0, 0.0]])
     calc = TensorPowerCalculator()
@@ -103,7 +103,7 @@ def test_schatten_n1_2x2():
 
 
 def test_schatten_2x2_n2_brute_force():
-    """Test n=2 for 2×2 matrices against brute-force Kronecker product."""
+    """Test n=2 for 2x2 matrices against brute-force Kronecker product."""
     A = np.array([[1.0, 2.0], [2.0, 1.0]])
     B = np.array([[0.0, 1.0], [1.0, 0.0]])
     calc = TensorPowerCalculator()
@@ -111,7 +111,7 @@ def test_schatten_2x2_n2_brute_force():
     # Block decomposition result for n=2
     val = calc.schatten_p_norm_weighted([A, B], n=2, p=2, coeffs=[1.0, -0.5])
 
-    # Brute force: explicit A⊗A - 0.5*(B⊗B)
+    # Brute force: explicit A(kron)A - 0.5*(B(kron)B)
     full_A = np.kron(A, A)
     full_B = np.kron(B, B)
     full_sum = full_A - 0.5 * full_B
@@ -122,7 +122,7 @@ def test_schatten_2x2_n2_brute_force():
 
 
 def test_schatten_2x2_n3_multiple_p():
-    """Test n=3 for 2×2 matrices with multiple Schatten norms."""
+    """Test n=3 for 2x2 matrices with multiple Schatten norms."""
     A = np.array([[1.0, 2.0], [2.0, 1.0]])
     calc = TensorPowerCalculator()
 
@@ -134,7 +134,7 @@ def test_schatten_2x2_n3_multiple_p():
 
 
 def test_schatten_2x2_random_n2_n3():
-    """Test 2×2 with random matrices for n=2 and n=3 against brute force."""
+    """Test 2x2 with random matrices for n=2 and n=3 against brute force."""
     rng = np.random.default_rng(42)
 
     for power in (2, 3):
@@ -159,7 +159,7 @@ def test_schatten_2x2_random_n2_n3():
 
 
 def test_mixed_dimensions_rejected():
-    """Test that mixed 2×2 and 3×3 matrices are rejected."""
+    """Test that mixed 2x2 and 3x3 matrices are rejected."""
     calc = TensorPowerCalculator()
 
     A2 = np.eye(2)
@@ -174,3 +174,106 @@ def test_mixed_dimensions_rejected():
 
     with pytest.raises(ValueError):
         calc.schatten_p_norm_weighted([A3, A2], n=3)
+
+
+# ---------------------------------------------------------------------------
+# Block Decomposition Tests
+# ---------------------------------------------------------------------------
+
+
+def test_block_decomposition_n1():
+    """Test block decomposition returns the matrix itself for n=1."""
+    calc = TensorPowerCalculator()
+
+    # 2x2
+    A2 = np.array([[1.0, 2.0], [3.0, 4.0]])
+    res2 = calc.block_decomposition(A2, n=1)
+    assert len(res2) == 1
+    assert res2[0][0] == 1.0
+    assert np.allclose(res2[0][1], A2)
+
+    # 3x3
+    A3 = np.array([[1.0, 2.0, 0.0], [3.0, 4.0, 0.0], [0.0, 0.0, 5.0]])
+    res3 = calc.block_decomposition(A3, n=1)
+    assert len(res3) == 1
+    assert res3[0][0] == 1.0
+    assert np.allclose(res3[0][1], A3)
+
+
+def test_block_decomposition_2x2_n5():
+    """Test 2x2 block decomposition spectral equivalence for n=5."""
+    rng = np.random.default_rng(42)
+    M = rng.standard_normal((2, 2))
+    n = 5
+    calc = TensorPowerCalculator()
+
+    blocks = calc.block_decomposition(M, n=n)
+
+    # 1. Test dimension conservation (sum of block_dim * mult == 2^n)
+    total_dim = sum(mult * block.shape[0] for mult, block in blocks)
+    assert total_dim == 2**n
+
+    # 2. Reconstruct brute force M^⊗n
+    M_full = M
+    for _ in range(n - 1):
+        M_full = np.kron(M_full, M)
+    expected_svs = np.linalg.svd(M_full, compute_uv=False)
+
+    # 3. Collect and flatten singular values from all blocks
+    block_svs = []
+    for mult, block in blocks:
+        svs = np.linalg.svd(block, compute_uv=False)
+        # Duplicate the singular values according to the block's multiplicity
+        for _ in range(int(mult)):
+            block_svs.extend(svs)
+
+    # Sort descending to align with np.linalg.svd defaults
+    block_svs = np.sort(block_svs)[::-1]
+
+    # 4. Assert spectral equivalence
+    assert np.allclose(expected_svs, block_svs, rtol=1e-11)
+
+
+def test_block_decomposition_3x3_n5():
+    """Test 3x3 SU(3) virtual block decomposition spectral equivalence for n=5."""
+    rng = np.random.default_rng(42)
+    M = rng.standard_normal((3, 3))
+    n = 5
+    calc = TensorPowerCalculator()
+
+    blocks = calc.block_decomposition(M, n=n)
+
+    # 1. Test virtual dimension conservation (sum of block_dim * mult == 3^n)
+    # Note: Because of Jacobi-Trudi, mult can be negative!
+    total_dim = sum(mult * block.shape[0] for mult, block in blocks)
+    assert total_dim == 3**n
+
+    # 2. Reconstruct brute force M^⊗n
+    M_full = M
+    for _ in range(n - 1):
+        M_full = np.kron(M_full, M)
+
+    # 3. Get brute force singular values
+    expected_svs = np.linalg.svd(M_full, compute_uv=False)
+
+    # 4. Because the decomposition is virtual (has negative multiplicities),
+    # we cannot map singular values 1-to-1. Instead, we verify that the
+    # algebraic sum of their p-th powers is identical.
+
+    # Check for p=2 (Frobenius-type norm)
+    expected_p2 = np.sum(np.power(expected_svs, 2))
+    block_p2 = 0.0
+    for mult, block in blocks:
+        svs = np.linalg.svd(block, compute_uv=False)
+        block_p2 += mult * np.sum(np.power(svs, 2))
+
+    assert np.allclose(expected_p2, block_p2, rtol=1e-11)
+
+    # Check for p=4 to ensure higher-order moment equivalence
+    expected_p4 = np.sum(np.power(expected_svs, 4))
+    block_p4 = 0.0
+    for mult, block in blocks:
+        svs = np.linalg.svd(block, compute_uv=False)
+        block_p4 += mult * np.sum(np.power(svs, 4))
+
+    assert np.allclose(expected_p4, block_p4, rtol=1e-11)

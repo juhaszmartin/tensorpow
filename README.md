@@ -51,37 +51,58 @@ D = 2 * np.eye(2)
 # compute Schatten‑2 norm of C⊗C - 1/2 * D⊗D (tensorpower=2)
 norm_2x2 = calc.schatten_p_norm_weighted([C, D], n=2, p=2, coeffs=[1.0, -0.5])
 print(f"2×2 result: {norm_2x2}")
+
+# Example 3: block decomposition of a single 2×2 matrix (tensor power n=5)
+M = np.array([[1.0, 0.5], [0.0, 1.0]])
+blocks = calc.block_decomposition(M, n=5)
+# each entry is (multiplicity, block_matrix)
+for mult, block in blocks:
+    print(mult, block.shape)
 ```
 
-Only the `schatten_p_norm_weighted` method is currently implemented. Both 2×2 and
-3×3 matrices are fully supported; the library automatically dispatches to the
-appropriate representation system (SL(2) or SU(3)) based on matrix dimension.
+`TensorPowerCalculator` exposes two public methods:
+
+- **`block_decomposition`** — irrep blocks of one matrix's n-th tensor power
+- **`schatten_p_norm_weighted`** — weighted Schatten-p norm of a linear
+  combination of tensor powers
+
+Both 2×2 and 3×3 matrices are supported; the library dispatches to SL(2) or
+SU(3) representation data based on matrix dimension.
+
+For **3×3** matrices, `block_decomposition` may return **negative**
+multiplicities (a virtual decomposition). Singular values of the full tensor
+power are not listed block-by-block; use weighted sums of singular-value powers
+over blocks (as `schatten_p_norm_weighted` does internally).
 
 ### Precomputed data
 
-- **2×2 (SL(2)):** requires `data/sl2reps.txt` (bundled in the public
-  `tensorpow` package). Supports tensor power **n ≤ 79** (representations
-  Sym^k for k = 0..79). Regenerate with:
+- **2×2 (SL(2)):** bundled as `tensorpow/_data/sl2reps.txt`. Supports tensor
+  power **n ≤ 79** (representations Sym^k for k = 0..79). Regenerate with the
+  external `tensorprod` tool:
 
   ```bash
   python -m tensorprod.sl2_sym_runner --max-k 79
   ```
 
-- **3×3 (SU(3)):** requires `data/piM_sym_<deg>_*.npz` files for the degrees
-  used by the Pieri decomposition at your chosen `n`.
-Additional routines (e.g. other norms or eigenvalue statistics) can be added to
-`TensorPowerCalculator` and will automatically reuse the underlying block
-decomposition.
+- **3×3 (SU(3)):** bundled as `tensorpow/_data/piM_sym_<deg>_*.npz` for the
+  degrees required by the Pieri decomposition at your chosen `n`.
+
+### Building on the decomposition
+
+`block_decomposition` exposes the irrep blocks of a single matrix's n-th tensor
+power. Methods such as `schatten_p_norm_weighted` combine block singular values
+without forming the full Kronecker product; you can use the same blocks to define
+other functionals (other norms, traces, eigenvalue statistics, and so on).
+Additional calculator methods may be added in future releases; they will build on
+this decomposition.
 
 ## Package structure
 
 - `tensorpow/core.py` – main implementation and `TensorPowerCalculator`,
-  includes both SL(2) (2×2) and SU(3) (3×3) block decomposition logic
+  including SL(2) (2×2) and SU(3) (3×3) block decomposition logic
 - `tensorpow/file_handler.py` – loaders for bundled `_data/` NPZ tensors
-  compressed SU(3) representation data
-  data (not part of the runtime API)
-- `tensorpow/sl2_loader.py` – loads `data/sl2reps.txt` at runtime
-- `tensorpow/sl2_sym_runner.py` – generator for `data/sl2reps.txt` (dev only)
+  (compressed SU(3) representation data; not part of the runtime API)
+- `tensorpow/sl2_loader.py` – loads `_data/sl2reps.txt` at runtime
 
 ## Testing
 

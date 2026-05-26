@@ -2,29 +2,54 @@
 
 from __future__ import annotations
 
-from importlib import resources
+import os
+import urllib.request
+from pathlib import Path
 
 import numpy as np
 from scipy import sparse
 
-# Symmetric representation data shipped in ``tensorpow/_data/`` (degrees 1..N).
+# Symmetric representation data supported (degrees 1..N).
 MAX_SHIPPED_SYM = 26
 
+# Define local cache and the remote GitHub raw content URL
+CACHE_DIR = Path.home() / ".tensorpow_data"
+GITHUB_BASE_URL = "https://raw.githubusercontent.com/juhaszmartin/tensorpow/refs/heads/main/tensorpow/_data/"
 
-def _data_file(name: str) -> resources.abc.Traversable:
-    return resources.files("tensorpow") / "_data" / name
+
+def _ensure_file_downloaded(filename: str) -> Path:
+    """Check if file exists locally; if not, download it from GitHub."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    local_path = CACHE_DIR / filename
+
+    if not local_path.exists():
+        print(f"tensorpow: Downloading {filename} from GitHub (first-time only)...")
+        remote_url = GITHUB_BASE_URL + filename
+        try:
+            urllib.request.urlretrieve(remote_url, local_path)
+        except Exception as e:
+            # Clean up partial downloads if it crashes midway
+            if local_path.exists():
+                local_path.unlink()
+            raise RuntimeError(f"Failed to download {filename} from GitHub: {e}")
+
+    return local_path
 
 
 def load_compressed(filename: str):
-    """Load ``piM_sym_<k>`` sparse tensor and exponent table from package data."""
-    stem = filename
-    sparse_path = _data_file(f"{stem}_T_sparse.npz")
-    exps_path = _data_file(f"{stem}_exps.npz")
-    with resources.as_file(sparse_path) as sparse_local:
-        T_huge = sparse.load_npz(sparse_local)
-    with resources.as_file(exps_path) as exps_local:
-        with np.load(exps_local) as data:
-            exps = data["exps"]
+    """Load ``piM_sym_<k>`` sparse tensor and exponent table from local cache or GitHub."""
+    sparse_name = f"{filename}_T_sparse.npz"
+    exps_name = f"{filename}_exps.npz"
+
+    # Download (if needed) and get local file paths
+    sparse_path = _ensure_file_downloaded(sparse_name)
+    exps_path = _ensure_file_downloaded(exps_name)
+
+    # Load the data from the local cache
+    T_huge = sparse.load_npz(sparse_path)
+    with np.load(exps_path) as data:
+        exps = data["exps"]
+
     return T_huge, exps
 
 

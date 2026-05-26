@@ -1,0 +1,9 @@
+exclude __pycache__/*
+exclude *.pyc
+exclude *old.py
+exclude .pytest_cache/
+include LICENSE
+include README.md
+recursive-include tensorpow *.py
+recursive-include tensorpow/_data *.npz
+include tensorpow/_data/sl2reps.txt

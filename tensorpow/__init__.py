@@ -14,4 +14,4 @@ __all__ = [
 try:
     __version__ = version("tensorpow")
 except PackageNotFoundError:
-    __version__ = "0.1.0"
+    __version__ = "0.2.0"

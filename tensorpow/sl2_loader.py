@@ -7,7 +7,7 @@ from typing import Any, Callable, List
 
 import numpy as np
 import sympy as sp
-from importlib import resources
+from .file_handler import _ensure_file_downloaded
 
 MAX_SHIPPED_SL2_K = 79
 
@@ -23,22 +23,19 @@ def _load_raw_reps() -> List[Any]:
     if _raw_reps is not None:
         return _raw_reps
 
-    data_file = resources.files("tensorpow") / "_data" / "sl2reps.txt"
     try:
-        text = data_file.read_text(encoding="utf-8")
-    except FileNotFoundError as exc:
+        # Use our caching downloader instead of importlib.resources
+        local_path = _ensure_file_downloaded("sl2reps.txt")
+        text = local_path.read_text(encoding="utf-8")
+    except Exception as exc:
         raise FileNotFoundError(
-            "SL(2) representation data not found in package. "
-            "Re-export tensorpow with sl2reps.txt in _data/."
+            "SL(2) representation data could not be found locally or downloaded from GitHub. " "Please check your internet connection."
         ) from exc
 
     _raw_reps = ast.literal_eval(text)
 
     if len(_raw_reps) - 1 < MAX_SHIPPED_SL2_K:
-        raise ValueError(
-            f"sl2reps.txt has {len(_raw_reps)} entries; "
-            f"expected at least {MAX_SHIPPED_SL2_K + 1}."
-        )
+        raise ValueError(f"sl2reps.txt has {len(_raw_reps)} entries; " f"expected at least {MAX_SHIPPED_SL2_K + 1}.")
     return _raw_reps
 
 
@@ -48,9 +45,7 @@ def _compile_k(k: int) -> Callable[..., np.ndarray]:
 
     raw = _load_raw_reps()
     if k < 0 or k >= len(raw):
-        raise ValueError(
-            f"SL(2) representation index k={k} out of range (file has k=0..{len(raw) - 1})."
-        )
+        raise ValueError(f"SL(2) representation index k={k} out of range (file has k=0..{len(raw) - 1}).")
 
     mat_strings = raw[k]
     sym_mat = sp.Matrix([[sp.sympify(expr) for expr in row] for row in mat_strings])
@@ -66,8 +61,7 @@ def eval_sl2_rep_matrix(k: int, M: np.ndarray) -> np.ndarray:
 
     if k > MAX_SHIPPED_SL2_K:
         raise ValueError(
-            f"SL(2) representation index k={k} exceeds shipped data (max k={MAX_SHIPPED_SL2_K}). "
-            "Use a smaller 2x2 tensor power n."
+            f"SL(2) representation index k={k} exceeds supported data (max k={MAX_SHIPPED_SL2_K}). " "Use a smaller 2x2 tensor power n."
         )
 
     a, b = M[0, 0], M[0, 1]

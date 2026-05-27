@@ -115,6 +115,7 @@ def solve_su3_pieri(n: int, debug: bool = False) -> dict:
 # representation utilities
 # ---------------------------------------------------------------------------
 
+
 rep_cache: dict = {}
 
 
@@ -237,8 +238,7 @@ class TensorPowerCalculator:
         """
         if args or kwargs:
             raise TypeError(
-                "TensorPowerCalculator() takes no arguments; "
-                "pass matrices to schatten_p_norm_weighted() or block_decomposition()"
+                "TensorPowerCalculator() takes no arguments; " "pass matrices to schatten_p_norm_weighted() or block_decomposition()"
             )
         self._pieri_cache: dict[int, dict] = {}
 
@@ -493,8 +493,7 @@ class TensorPowerCalculator:
         """Compute the block-diagonal decomposition of the n-th tensor power.
 
         Returns a list of tuples containing the multiplicity and the
-        corresponding block matrix for the given tensor power.  For 3×3
-        matrices, multiplicities may be negative (virtual decomposition).
+        corresponding block matrix for the given tensor power.
 
         Parameters
         ----------

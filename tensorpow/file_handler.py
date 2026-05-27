@@ -9,9 +9,6 @@ from pathlib import Path
 import numpy as np
 from scipy import sparse
 
-# Symmetric representation data supported (degrees 1..N).
-MAX_SHIPPED_SYM = 26
-
 # Define local cache and the remote GitHub raw content URL
 CACHE_DIR = Path.home() / ".tensorpow_data"
 GITHUB_BASE_URL = "https://raw.githubusercontent.com/juhaszmartin/tensorpow/refs/heads/main/tensorpow/_data/"

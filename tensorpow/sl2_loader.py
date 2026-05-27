@@ -24,7 +24,7 @@ def _load_raw_reps() -> List[Any]:
         return _raw_reps
 
     try:
-        # Use our caching downloader instead of importlib.resources
+        # Use caching downloader instead of importlib.resources
         local_path = _ensure_file_downloaded("sl2reps.txt")
         text = local_path.read_text(encoding="utf-8")
     except Exception as exc:

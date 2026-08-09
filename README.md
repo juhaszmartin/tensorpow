@@ -23,11 +23,11 @@ For development:
 pip install -e ".[test]"
 ```
 
-Dependencies (`numpy`, `pulp`, `scipy`, `sympy`) are installed automatically.
+Dependencies (`numpy`, `scipy`, `sympy`) are installed automatically.
 
 ### Data limits
 
-Precomputed SU(3) symmetric representation data is bundled for degrees **1 through 26**. Some large 3×3 tensor powers may require higher degrees; those cases raise a clear error.
+Precomputed SU(3) symmetric representation data is available for degrees **1 through 30**. Some large 3×3 tensor powers may require higher degrees; those cases raise a clear error.
 
 Precomputed SL(2) data (``sl2reps.txt``) supports 2×2 tensor powers **n ≤ 79**.
 
@@ -76,16 +76,22 @@ over blocks (as `schatten_p_norm_weighted` does internally).
 
 ### Precomputed data
 
-- **2×2 (SL(2)):** bundled as `tensorpow/_data/sl2reps.txt`. Supports tensor
-  power **n ≤ 79** (representations Sym^k for k = 0..79). Regenerate with the
-  external `tensorprod` tool:
+- **2×2 (SL(2)):** downloaded from Zenodo (`sl2reps.txt`) or generated locally. Supports tensor
+  power **n ≤ 79** by default (representations Sym^k for k = 0..79). You can generate larger dimensions:
 
   ```bash
-  python -m tensorprod.sl2_sym_runner --max-k 79
+  python -m tensorpow.sl2_sym_runner --max-k 100
   ```
 
-- **3×3 (SU(3)):** bundled as `tensorpow/_data/piM_sym_<deg>_*.npz` for the
+- **3×3 (SU(3)):** downloaded from Zenodo (`piM_sym_<deg>_*.npz`) for the
   degrees required by the Pieri decomposition at your chosen `n`.
+  If you need dimensions beyond degree 30, you can generate them locally:
+
+  ```bash
+  python -m tensorpow.su3_sym_runner --min-k 31 --max-k 35
+  ```
+
+All downloaded and generated files are stored securely in your OS-specific user data directory via `platformdirs` (e.g. `~/.local/share/tensorpow` on Linux), ensuring your custom generated data is never lost during package updates.
 
 ### Building on the decomposition
 
@@ -100,9 +106,10 @@ this decomposition.
 
 - `tensorpow/core.py` – main implementation and `TensorPowerCalculator`,
   including SL(2) (2×2) and SU(3) (3×3) block decomposition logic
-- `tensorpow/file_handler.py` – loaders for bundled `_data/` NPZ tensors
+- `tensorpow/*_runner.py` – generator tools to calculate arbitrary dimension representations locally
+- `tensorpow/file_handler.py` – loaders for downloaded NPZ tensors
   (compressed SU(3) representation data; not part of the runtime API)
-- `tensorpow/sl2_loader.py` – loads `_data/sl2reps.txt` at runtime
+- `tensorpow/sl2_loader.py` – loads downloaded `sl2reps.txt` at runtime
 
 ## Testing
 

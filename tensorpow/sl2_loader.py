@@ -29,7 +29,7 @@ def _load_raw_reps() -> List[Any]:
         text = local_path.read_text(encoding="utf-8")
     except Exception as exc:
         raise FileNotFoundError(
-            "SL(2) representation data could not be found locally or downloaded from GitHub. " "Please check your internet connection."
+            "SL(2) representation data could not be found locally or downloaded from Zenodo. " "Please check your internet connection."
         ) from exc
 
     _raw_reps = ast.literal_eval(text)
@@ -59,9 +59,11 @@ def eval_sl2_rep_matrix(k: int, M: np.ndarray) -> np.ndarray:
     if k == 0:
         return np.array([[1.0]], dtype=complex)
 
-    if k > MAX_SHIPPED_SL2_K:
+    raw = _load_raw_reps()
+    if k >= len(raw):
         raise ValueError(
-            f"SL(2) representation index k={k} exceeds supported data (max k={MAX_SHIPPED_SL2_K}). " "Use a smaller 2x2 tensor power n."
+            f"SL(2) representation index k={k} exceeds supported data (max k={len(raw)-1}). "
+            f"Please run `python -m tensorpow.sl2_sym_runner --max-k {k}` to calculate it locally."
         )
 
     a, b = M[0, 0], M[0, 1]

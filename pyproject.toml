@@ -22,7 +22,7 @@ classifiers = [
 ]
 dependencies = [
     "numpy",
-    "pulp",
+    "platformdirs",
     "scipy",
     "sympy",
 ]
@@ -38,9 +38,6 @@ Issues = "https://github.com/juhaszmartin/tensorpow/issues"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["tensorpow*"]
-
-[tool.setuptools.package-data]
-tensorpow = ["_data/*.npz", "_data/sl2reps.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,7 +1,9 @@
 # tensorpow
 
 `tensorpow` is a small Python library for working with norms and
-representations of tensor powers.  Base matrices can be either **2×2**
+representations of tensor powers.  It's main use is calculating the result of expressions of the form: $\left\| \sum_{i} t_i A_i^{\otimes n} \right\|_p$, where $A_1, A_2, \dots \in M_d(\mathbb{C})$ are fixed matrices, $t_1, t_2, \dots \in \mathbb{C}$ are fixed coefficients, and $\| \cdot \|_p$ denotes the Schatten $p$-norm.
+
+Base matrices can be either **2×2**
 (using SL(2) representation data) or **3×3** (using SU(3) representation
 data).  The **tensor power** itself may be any positive integer – the
 library uses precomputed representation data indexed by that power.  A
@@ -53,8 +55,10 @@ val = calc.schatten_p_norm_weighted([A, B], n=20, p=2, backend="smart_hybrid")
 
 **Backend Options:**
 - `"cpu"` (Default): Uses standard NumPy and runs entirely on the CPU.
-- `"smart_hybrid"`: The recommended GPU implementation. It performs massive matrix exponentiation on the GPU, offloads the scaling block aggregations back to System RAM to gracefully bypass VRAM limits, and attempts to compute the final SVD on the GPU (automatically falling back to CPU SVD for massive dimension blocks).
+- `"smart_hybrid"`: The recommended GPU implementation. It performs massive matrix exponentiation on the GPU, offloads the scaling block aggregations back to System RAM to gracefully bypass VRAM limits, and attempts to compute the final SVD on the GPU (automatically falling back to CPU SVD if it runs out of VRAM).
 - `"cupy"`: A pure CuPy implementation that attempts to keep the entire block pipeline strictly in VRAM. This avoids PCIe transfer overhead but will easily exceed VRAM on standard cards for $n \ge 16$.
+
+*Note:* using "smart_hybrid" backend with a 5070 GPU (12GB VRAM) yields results an order of magnitude faster, than "cpu". It runs out of VRAM for $n \ge 27$.
 
 ## Quick start
 
@@ -119,7 +123,7 @@ This multi-processed script will compute the representations and append them loc
 The base package supports up to $n \le 30$ for 3x3 matrices using compressed `piM_sym_<deg>_*.npz` files. If you need dimensions beyond degree 30, you can generate the sparse tensor representations locally (note: this is computationally heavy and automatically runs in parallel across all CPU cores):
 
 ```bash
-python -m tensorpow.su3_sym_runner --min-k 31 --max-k 35 --workers 8
+python -m tensorpow.su3_sym_runner --min-k 31 --max-k 35 --workers 5
 ```
 
 Your custom generated representation files are instantly recognized by `tensorpow` in your next run!

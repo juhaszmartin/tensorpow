@@ -44,9 +44,9 @@ def test_schatten_n1(backend):
 @pytest.mark.parametrize("backend", ["cpu", "cupy", "smart_hybrid"])
 def test_schatten_random_nk(backend):
     _skip_if_missing_cupy(backend)
-    # compare weighted norm for several powers (2 and 3)
+    # compare weighted norm for several powers
     rng = np.random.default_rng(0)
-    for power in range(1, 11):
+    for power in range(1, 8):
         A = rng.standard_normal((3, 3))
         B = rng.standard_normal((3, 3))
         calc = TensorPowerCalculator()

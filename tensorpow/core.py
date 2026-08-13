@@ -153,7 +153,7 @@ def load_rep(lbl: Tuple[Any, Any]):
     return rep_cache[lbl]
 
 
-def eval_rep_matrix(lbl: Tuple[Any, Any], matrix: np.ndarray) -> np.ndarray:
+def eval_rep_matrix(lbl: Tuple[Any, Any], matrix: np.ndarray, backend: str = "cpu") -> np.ndarray:
     # Sym^0 is just the 1x1 scalar 1.0
     if lbl[0] == "sym" and lbl[1] == 0:
         return np.array([[1.0]], dtype=complex)
@@ -163,7 +163,7 @@ def eval_rep_matrix(lbl: Tuple[Any, Any], matrix: np.ndarray) -> np.ndarray:
         return np.array([[det_val]], dtype=complex)
 
     T_huge, exps = load_rep(lbl)
-    return evaluate_compressed_tensor(T_huge, exps, matrix)
+    return evaluate_compressed_tensor(T_huge, exps, matrix, backend=backend)
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +277,7 @@ class TensorPowerCalculator:
         p: float = 2.0,
         coeffs: Optional[Iterable[float]] = None,
         debug: bool = False,
+        backend: str = "cpu",
     ) -> float:
         """Compute the weighted Schatten-p norm of the n-th tensor power.
 
@@ -301,6 +302,10 @@ class TensorPowerCalculator:
             Weights for each matrix (default 1.0 for all).
         debug : bool
             If True, print solver output.
+        backend : str, optional
+            Backend to use for the calculation ("cpu", "smart_hybrid", or "cupy").
+            Defaults to "cpu".
+            "smart_hybrid" and "cupy" require the `cupy` package.
 
         Returns
         -------
@@ -373,7 +378,7 @@ class TensorPowerCalculator:
             # SU(3) case: load decomposition and representation data only for 3x3 matrices
             pieri_result = self._get_pieri_result(n, debug=debug)
             self._preload_reps(pieri_result)
-            return self._schatten_p_norm_weighted_3x3(mats, n, p, coeffs, debug)
+            return self._schatten_p_norm_weighted_3x3(mats, n, p, coeffs, debug, backend)
 
     def _schatten_p_norm_weighted_2x2(self, mats: List[np.ndarray], n: int, p: float, coeffs: List[float], debug: bool) -> float:
         # Compute blockform for each matrix and add them weighted
@@ -420,11 +425,49 @@ class TensorPowerCalculator:
 
             return np.power(total_p_power, 1.0 / p)
 
-    def _schatten_p_norm_weighted_3x3(self, mats: List[np.ndarray], n: int, p: float, coeffs: List[float], debug: bool) -> float:
+    def _schatten_p_norm_weighted_3x3(self, mats: List[np.ndarray], n: int, p: float, coeffs: List[float], debug: bool, backend: str = "cpu") -> float:
         pieri_result = self._get_pieri_result(n, debug=debug)
         self._preload_reps(pieri_result)
 
-        dets = [np.linalg.det(M) for M in mats]
+        if backend == "cpu":
+            import numpy as lib
+            det_func = lib.linalg.det
+            kron_func = lib.kron
+            def svd_func(x):
+                return lib.linalg.svd(x, compute_uv=False)
+        elif backend == "smart_hybrid":
+            import cupy as lib
+            import numpy as np_lib
+            det_func = np_lib.linalg.det
+            kron_func = np_lib.kron
+            def svd_func(x):
+                x_gpu = lib.asarray(x)
+                try:
+                    s = lib.linalg.svd(x_gpu, compute_uv=False)
+                    return lib.asnumpy(s)
+                except lib.cuda.memory.OutOfMemoryError:
+                    print(f"  [smart_hybrid] cuSOLVER OOM for workspace of {x.shape} matrix. Falling back to CPU SVD...", flush=True)
+                    lib.get_default_memory_pool().free_all_blocks()
+                    del x_gpu
+                    return np_lib.linalg.svd(x, compute_uv=False)
+        elif backend == "cupy":
+            import cupy as lib
+            import numpy as np_lib
+            det_func = np_lib.linalg.det
+            kron_func = lib.kron
+            def svd_func(x):
+                try:
+                    s = lib.linalg.svd(x, compute_uv=False)
+                    return lib.asnumpy(s)
+                except lib.cuda.memory.OutOfMemoryError:
+                    print(f"  [cupy] cuSOLVER OOM for workspace of {x.shape} matrix. Falling back to CPU SVD...", flush=True)
+                    lib.get_default_memory_pool().free_all_blocks()
+                    x_cpu = lib.asnumpy(x)
+                    return np_lib.linalg.svd(x_cpu, compute_uv=False)
+        else:
+            raise ValueError(f"Unknown backend: {backend}")
+
+        dets = [det_func(M) for M in mats]
         total_p_power = 0.0
 
         if debug:
@@ -446,10 +489,14 @@ class TensorPowerCalculator:
                 c_val = coeffs[i]
                 if c_val == 0:
                     continue
-                pi_a = eval_rep_matrix(a_lbl, M_curr)
-                pi_b = eval_rep_matrix(b_lbl, M_curr)
+                pi_a = eval_rep_matrix(a_lbl, M_curr, backend=backend)
+                pi_b = eval_rep_matrix(b_lbl, M_curr, backend=backend)
+                if backend == "cupy":
+                    import cupy as lib
+                    pi_a = lib.asarray(pi_a)
+                    pi_b = lib.asarray(pi_b)
                 scalar = c_val * (dets[i] ** m)
-                term = scalar * np.kron(pi_a, pi_b)
+                term = scalar * kron_func(pi_a, pi_b)
                 if sum_matrix is None:
                     sum_matrix = term
                 else:
@@ -459,7 +506,7 @@ class TensorPowerCalculator:
                 block_p_sum = 0.0
                 sum_dim = 0
             else:
-                s_vals = np.linalg.svd(sum_matrix, compute_uv=False)
+                s_vals = svd_func(sum_matrix)
                 if p == np.inf:
                     block_norm = float(np.max(s_vals))
                     block_p_sum = None  # unused

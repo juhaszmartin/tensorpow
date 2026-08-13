@@ -27,9 +27,34 @@ Dependencies (`numpy`, `scipy`, `sympy`) are installed automatically.
 
 ### Data limits
 
-Precomputed SU(3) symmetric representation data is available for degrees **1 through 30**. Some large 3×3 tensor powers may require higher degrees; those cases raise a clear error.
+Precomputed SU(3) symmetric representation data is available for degrees **1 through 30**. Larger 3×3 tensor powers require higher degrees; those cases raise a clear error.
 
 Precomputed SL(2) data (``sl2reps.txt``) supports 2×2 tensor powers **n ≤ 79**.
+
+
+## GPU Acceleration
+
+The `tensorpow` package supports NVIDIA GPU acceleration for operations involving 3x3 matrices to dramatically speed up large tensor power calculations (e.g. $n \ge 10$).
+
+Because CuPy is heavily dependent on your specific CUDA version, you must manually install the appropriate CuPy wheel for your machine in addition to the optional GPU dependency:
+
+```bash
+# Install tensorpow with GPU dependencies
+pip install tensorpow[gpu]
+
+# Install the CuPy wheel matching your CUDA version (e.g. CUDA 13.x for Blackwell architectures)
+pip install cupy-cuda13x
+```
+
+Once installed, you can pass the `backend` flag to `schatten_p_norm_weighted`:
+```python
+val = calc.schatten_p_norm_weighted([A, B], n=20, p=2, backend="smart_hybrid")
+```
+
+**Backend Options:**
+- `"cpu"` (Default): Uses standard NumPy and runs entirely on the CPU.
+- `"smart_hybrid"`: The recommended GPU implementation. It performs massive matrix exponentiation on the GPU, offloads the scaling block aggregations back to System RAM to gracefully bypass VRAM limits, and attempts to compute the final SVD on the GPU (automatically falling back to CPU SVD for massive dimension blocks).
+- `"cupy"`: A pure CuPy implementation that attempts to keep the entire block pipeline strictly in VRAM. This avoids PCIe transfer overhead but will easily exceed VRAM on standard cards for $n \ge 16$.
 
 ## Quick start
 
@@ -74,24 +99,30 @@ multiplicities (a virtual decomposition). Singular values of the full tensor
 power are not listed block-by-block; use weighted sums of singular-value powers
 over blocks (as `schatten_p_norm_weighted` does internally).
 
-### Precomputed data
+## Generating Representation Data Locally
 
-- **2×2 (SL(2)):** downloaded from Zenodo (`sl2reps.txt`) or generated locally. Supports tensor
-  power **n ≤ 79** by default (representations Sym^k for k = 0..79). You can generate larger dimensions:
+The package relies on massive symmetric representation tensors. By default, it downloads precomputed tensors (from Zenodo) securely into your OS user data directory (e.g. `~/.local/share/tensorpow`) so they are preserved across updates.
 
-  ```bash
-  python -m tensorpow.sl2_sym_runner --max-k 100
-  ```
+However, you can run the built-in representation generators locally on your own machine to extend the package's capabilities beyond the published limits! These symbolic generator scripts are thoroughly tested in `tests/test_generation.py` to ensure their output exactly matches the Zenodo baseline.
 
-- **3×3 (SU(3)):** downloaded from Zenodo (`piM_sym_<deg>_*.npz`) for the
-  degrees required by the Pieri decomposition at your chosen `n`.
-  If you need dimensions beyond degree 30, you can generate them locally:
+### Extending SL(2) (2×2 Matrices)
 
-  ```bash
-  python -m tensorpow.su3_sym_runner --min-k 31 --max-k 35
-  ```
+The base package supports up to $n \le 79$ for 2x2 matrices (Sym^k for k = 0..79). If you need higher tensor powers, you can easily generate them:
 
-All downloaded and generated files are stored securely in your OS-specific user data directory via `platformdirs` (e.g. `~/.local/share/tensorpow` on Linux), ensuring your custom generated data is never lost during package updates.
+```bash
+python -m tensorpow.sl2_sym_runner --max-k 100
+```
+This multi-processed script will compute the representations and append them locally to your cached `sl2reps.txt` file.
+
+### Extending SU(3) (3×3 Matrices)
+
+The base package supports up to $n \le 30$ for 3x3 matrices using compressed `piM_sym_<deg>_*.npz` files. If you need dimensions beyond degree 30, you can generate the sparse tensor representations locally (note: this is computationally heavy and automatically runs in parallel across all CPU cores):
+
+```bash
+python -m tensorpow.su3_sym_runner --min-k 31 --max-k 35 --workers 8
+```
+
+Your custom generated representation files are instantly recognized by `tensorpow` in your next run!
 
 ### Building on the decomposition
 

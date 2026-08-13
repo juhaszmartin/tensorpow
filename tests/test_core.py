@@ -4,55 +4,70 @@ import pytest
 from tensorpow import TensorPowerCalculator, solve_su3_pieri
 
 
-def test_basic():
-    # ILP solutions should exist for several n values; spot-check a couple
-    for n in (2, 3, 5):
-        res = solve_su3_pieri(n)
-        assert res["status"] == "Optimal"
-        assert isinstance(res["solution"], list)
+# Since ILP is currently not used in favor for Jacobi-Trudi, the test is currently not performed
+# def test_basic():
+#     # ILP solutions should exist for several n values; spot-check a couple
+#     for n in (2, 3, 5):
+#         res = solve_su3_pieri(n)
+#         assert res["status"] == "Optimal"
+#         assert isinstance(res["solution"], list)
+
+def _skip_if_missing_cupy(backend):
+    if backend in ("cupy", "smart_hybrid"):
+        pytest.importorskip("cupy")
 
 
-def test_schatten_n1():
+@pytest.mark.parametrize("backend", ["cpu", "cupy", "smart_hybrid"])
+def test_schatten_n1(backend):
+    _skip_if_missing_cupy(backend)
     # for n=1 the calculator should just compute the ordinary p-norm
     A = np.array([[1.0, 2.0, 0.0], [3.0, 4.0, 0.0], [0.0, 0.0, 5.0]])
     B = np.array([[0.5, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -0.5]])
     calc = TensorPowerCalculator()
     # weighted case with coefficients (p=2)
-    val1 = calc.schatten_p_norm_weighted([A, B], n=1, p=2, coeffs=[1.0, 1.0])
+    val1 = calc.schatten_p_norm_weighted([A, B], n=1, p=2, coeffs=[1.0, 1.0], backend=backend)
     direct = np.linalg.svd(A + B, compute_uv=False)
     direct_val = np.sum(np.power(direct, 2)) ** 0.5
     assert np.allclose(val1, direct_val)
 
     # p = infinity should give max singular value of the weighted sum
-    inf_val = calc.schatten_p_norm_weighted([A, B], n=1, p=np.inf, coeffs=[1.0, 1.0])
+    inf_val = calc.schatten_p_norm_weighted([A, B], n=1, p=np.inf, coeffs=[1.0, 1.0], backend=backend)
     expected_inf = np.max(np.linalg.svd(A + B, compute_uv=False))
     assert inf_val == pytest.approx(expected_inf)
 
     # also accept a single array without wrapping
-    single = calc.schatten_p_norm_weighted(A, n=1, p=2)
-    wrapped = calc.schatten_p_norm_weighted([A], n=1, p=2)
+    single = calc.schatten_p_norm_weighted(A, n=1, p=2, backend=backend)
+    wrapped = calc.schatten_p_norm_weighted([A], n=1, p=2, backend=backend)
     assert single == pytest.approx(wrapped)
 
 
-def test_schatten_random_nk():
+@pytest.mark.parametrize("backend", ["cpu", "cupy", "smart_hybrid"])
+def test_schatten_random_nk(backend):
+    _skip_if_missing_cupy(backend)
     # compare weighted norm for several powers (2 and 3)
     rng = np.random.default_rng(0)
-    for power in (2, 3):
+    for power in range(1, 11):
         A = rng.standard_normal((3, 3))
         B = rng.standard_normal((3, 3))
         calc = TensorPowerCalculator()
-        val = calc.schatten_p_norm_weighted([A, B], n=power, p=2, coeffs=[1, -1])
-        # brute force using explicit kronecker product
-        fullA = A
-        for _ in range(power - 1):
-            fullA = np.kron(fullA, A)
-        fullB = B
-        for _ in range(power - 1):
-            fullB = np.kron(fullB, B)
-        full = fullA - fullB
-        brute = np.linalg.svd(full, compute_uv=False)
-        brute_val = np.sum(np.power(brute, 2)) ** 0.5
-        assert np.allclose(val, brute_val)
+        val = calc.schatten_p_norm_weighted([A, B], n=power, p=2, coeffs=[1, -1], backend=backend)
+        
+        # Brute force using explicit kronecker product is very fast for n <= 5
+        if power <= 5:
+            fullA = A
+            for _ in range(power - 1):
+                fullA = np.kron(fullA, A)
+            fullB = B
+            for _ in range(power - 1):
+                fullB = np.kron(fullB, B)
+            full = fullA - fullB
+            brute = np.linalg.svd(full, compute_uv=False)
+            brute_val = np.sum(np.power(brute, 2)) ** 0.5
+            assert np.allclose(val, brute_val)
+        else:
+            # For n > 5, validate against the CPU implementation
+            val_cpu = calc.schatten_p_norm_weighted([A, B], n=power, p=2, coeffs=[1, -1], backend="cpu")
+            assert np.allclose(val, val_cpu)
 
 
 def test_invalid_dimension_and_size():
@@ -137,7 +152,7 @@ def test_schatten_2x2_random_n2_n3():
     """Test 2x2 with random matrices for n=2 and n=3 against brute force."""
     rng = np.random.default_rng(42)
 
-    for power in (2, 3):
+    for power in range(1, 10):
         A = rng.standard_normal((2, 2))
         B = rng.standard_normal((2, 2))
         calc = TensorPowerCalculator()

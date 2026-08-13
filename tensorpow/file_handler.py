@@ -66,13 +66,34 @@ def load_compressed(filename: str):
     return T_huge, exps
 
 
-def evaluate_compressed_tensor(T_huge, exps, A):
+def evaluate_compressed_tensor(T_huge, exps, A, backend="cpu"):
     """Evaluate the sparse tensor at matrix ``A``."""
     n = int(np.sqrt(T_huge.shape[0]))
-    vals = np.array(A).reshape(-1)
-    monoms = np.prod(np.power(vals, exps), axis=1)
-    flat_result = T_huge.dot(monoms)
-    return flat_result.reshape(n, n)
+    
+    if backend == "cpu":
+        vals = np.array(A).reshape(-1)
+        monoms = np.prod(np.power(vals, exps), axis=1)
+        flat_result = T_huge.dot(monoms)
+        return flat_result.reshape(n, n)
+    elif backend in ("cupy", "smart_hybrid"):
+        import cupy as cp
+        vals = cp.asarray(A).reshape(-1)
+        exps_gpu = cp.asarray(exps)
+        
+        monoms = cp.ones(len(exps), dtype=vals.dtype)
+        for i in range(exps_gpu.shape[1]):
+            col_exps = exps_gpu[:, i]
+            mask = col_exps > 0
+            if cp.any(mask):
+                monoms[mask] *= cp.power(vals[i], col_exps[mask])
+                
+        import cupyx.scipy.sparse as csparse
+        T_huge_gpu = csparse.csr_matrix(T_huge)
+        
+        flat_result = T_huge_gpu.dot(monoms)
+        if backend == "smart_hybrid":
+            return cp.asnumpy(flat_result).reshape(n, n)
+        return flat_result.reshape(n, n)
 
 
 def gen_exponents(k, n=9):
